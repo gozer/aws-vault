@@ -12,6 +12,7 @@ import (
 	"github.com/99designs/aws-vault/prompt"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 type ExecCommandInput struct {
@@ -28,9 +29,10 @@ type ExecCommandInput struct {
 	NoSession    bool
 }
 
-func ExecCommand(ui Ui, input ExecCommandInput) {
+func ExecCommand(app *kingpin.Application, input ExecCommandInput) {
 	if os.Getenv("AWS_VAULT") != "" {
-		ui.Fatal("aws-vault sessions should be nested with care, unset $AWS_VAULT to force")
+		app.Fatalf("aws-vault sessions should be nested with care, unset $AWS_VAULT to force")
+		return
 	}
 
 	var (
@@ -41,14 +43,16 @@ func ExecCommand(ui Ui, input ExecCommandInput) {
 
 	if input.NoSession {
 		if input.StartServer {
-			ui.Error.Fatal("Can't start a credential server without a session")
+			app.Fatalf("Can't start a credential server without a session")
+			return
 		}
 
 		log.Println("No session requested, be careful!")
 		provider := &KeyringProvider{input.Keyring, input.Profile}
 		val, err = provider.Retrieve()
 		if err != nil {
-			log.Fatal(err)
+			app.Fatalf(err.Error())
+			return
 		}
 	} else {
 		creds, err := NewVaultCredentials(input.Keyring, input.Profile, VaultOptions{
@@ -58,21 +62,25 @@ func ExecCommand(ui Ui, input ExecCommandInput) {
 			MfaPrompt:          input.MfaPrompt,
 		})
 		if err != nil {
-			ui.Error.Fatal(err)
+			app.Fatalf(err.Error())
+			return
 		}
 
 		val, err = creds.Get()
 		if err != nil {
 			if awsErr, ok := err.(awserr.Error); ok && awsErr.Code() == "NoCredentialProviders" {
-				ui.Error.Fatalf("No credentials found for profile %q", input.Profile)
+				app.Fatalf("No credentials found for profile %q", input.Profile)
+				return
 			} else {
-				ui.Error.Fatal(err)
+				app.Fatalf(err.Error())
+				return
 			}
 		}
 
 		if input.StartServer {
-			if err := startCredentialsServer(ui, creds); err != nil {
-				ui.Error.Fatal(err)
+			if err := startCredentialsServer(creds); err != nil {
+				app.Fatalf(err.Error())
+				return
 			} else {
 				writeEnv = false
 			}
@@ -82,7 +90,8 @@ func ExecCommand(ui Ui, input ExecCommandInput) {
 
 	profs, err := parseProfiles()
 	if err != nil {
-		ui.Error.Fatal(err)
+		app.Fatalf(err.Error())
+		return
 	}
 
 	env := environ(os.Environ())
@@ -100,7 +109,7 @@ func ExecCommand(ui Ui, input ExecCommandInput) {
 	}
 
 	if writeEnv {
-		ui.Debug.Println("Writing temporary credentials to ENV")
+		log.Println("Writing temporary credentials to ENV")
 
 		env.Set("AWS_ACCESS_KEY_ID", val.AccessKeyID)
 		env.Set("AWS_SECRET_ACCESS_KEY", val.SecretAccessKey)
@@ -127,7 +136,8 @@ func ExecCommand(ui Ui, input ExecCommandInput) {
 	var waitStatus syscall.WaitStatus
 	if err := cmd.Run(); err != nil {
 		if err != nil {
-			ui.Error.Println(err)
+			app.Errorf(err.Error())
+			return
 		}
 		if exitError, ok := err.(*exec.ExitError); ok {
 			waitStatus = exitError.Sys().(syscall.WaitStatus)
