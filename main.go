@@ -200,6 +200,9 @@ func main() {
 		Exit:   os.Exit,
 	}
 
+	kingpin.BashCompletionTemplate = bashCompletionTemplate
+	kingpin.BashCompletionTemplate = zshCompletionTemplate
+
 	app := kingpin.New("aws-vault",
 		`A vault for securely storing and accessing AWS credentials in development environments.`)
 
