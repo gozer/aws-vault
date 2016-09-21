@@ -53,11 +53,17 @@ func keychainPath(name string) (string, error) {
 		return "", err
 	}
 
+	preSierraPath := usr.HomeDir + "/Library/Keychains/" + name + ".keychain"
+	postSierraPath := usr.HomeDir + "/Library/Keychains/" + name + ".keychain-db"
 	if major >= 16 {
-		return usr.HomeDir + "/Library/Keychains/" + name + ".keychain-db", nil
-	} else {
-		return usr.HomeDir + "/Library/Keychains/" + name + ".keychain", nil
+		// Only use .keychain-db if .keychain doesn't exist.
+		// Seems that's what Sierra's keychain API is doing internally
+		if _, err := os.Stat(preSierraPath); os.IsNotExist(err) {
+			return postSierraPath, nil
+		}
 	}
+
+	return preSierraPath, nil
 }
 
 func init() {
